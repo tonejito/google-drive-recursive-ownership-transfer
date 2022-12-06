@@ -127,11 +127,12 @@ def process_all_files(service, destination_folder_id, folder_id, folder_name=Non
 def main():
     msg = "This script moves all files and folders recursively of a given Google Drive folder."
     parser = argparse.ArgumentParser(description=msg)
-    parser.add_argument("-d", "--destination", help="ID of the destination folder where the files should be moved to.",
-                        required=True)
-    parser.add_argument("-f", "--folder",
-                        help="ID of the Google Drive folder. The user's root directory will be used if left empty.",
-                        default="root")
+    parser.add_argument(
+        "-d", "--destination", required=True,
+        help="ID of the destination folder where the files should be moved to.")
+    parser.add_argument(
+        "-f", "--folder",default="root",
+        help="ID of the Google Drive folder. The user's root directory will be used if left empty.")
     args = parser.parse_args()
     print(f"Moving all files to '{args.destination}'")
     service = get_drive_service()

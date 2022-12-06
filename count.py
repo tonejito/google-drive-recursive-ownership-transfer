@@ -45,9 +45,9 @@ def process_all_files(service, folder_id):
 def main():
     msg = "This script counts the number of files owned by different users in a given Google Drive folder and all its subfolders."
     parser = argparse.ArgumentParser(description=msg)
-    parser.add_argument("-f", "--folder",
-                        help="ID of the Google Drive folder. The user's root directory will be used if left empty.",
-                        default="root")
+    parser.add_argument(
+        "-f", "--folder", default="root"
+        help="ID of the Google Drive folder. The user's root directory will be used if left empty.")
     args = parser.parse_args()
     service = get_drive_service()
     print("Counting", end="")
