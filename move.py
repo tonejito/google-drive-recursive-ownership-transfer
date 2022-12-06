@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 
 from google_auth_oauthlib.flow import InstalledAppFlow
