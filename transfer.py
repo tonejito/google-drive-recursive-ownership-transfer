@@ -14,6 +14,9 @@
 # https://google-auth-oauthlib.readthedocs.io/en/latest/reference/google_auth_oauthlib.flow.html
 
 import argparse
+import logging
+import pickle
+import json
 import os
 
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -24,6 +27,9 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 BATCH = None
 BATCH_SIZE = 0
 MAXIMUM_BATCH_SIZE = 100
+PICKLE_FILE="client_secrets.pkl"
+
+# TODO: Set INFO log level
 
 # FIXME: Error handling / Rate limit
 #
@@ -38,17 +44,36 @@ MAXIMUM_BATCH_SIZE = 100
 
 # TODO: Give option to avoid running a local web browser to get the OAUTH
 def get_drive_service(host="localhost", port=65535):
-    flow = InstalledAppFlow.from_client_secrets_file("client_secrets.json", SCOPES)
-    creds = flow.run_local_server(host=host, port=port)
+    if os.path.exists(PICKLE_FILE):
+      try:
+        with open(PICKLE_FILE, 'rb') as input_file:
+          creds = pickle.load(input_file)
+      except Exception as e:
+          exception_name = e.__class__.__name__
+          logging.warning({"name": exception_name, "message": str(e)})
+          raise
+    else:
+      flow = InstalledAppFlow.from_client_secrets_file("client_secrets.json", SCOPES)
+      creds = flow.run_local_server(host=host, port=port)
+      try:
+        with open(PICKLE_FILE, 'wb') as output_file:
+          pickle.dump(creds, output_file)
+      except Exception as e:
+          exception_name = e.__class__.__name__
+          logging.warning({"name": exception_name, "message": str(e)})
+          pass
     service = build("drive", "v3", credentials=creds)
     return service
 
 
 def callback(request_id, response, exception):
     if exception:
-        print(f"\n{exception}")
+        exception_name = exception.__class__.__name__
+        logging.warning({"name": exception_name, "message": str(exception)})
+        # raise Exception("Something happened") from exception
+        raise RuntimeError("Something happened") from exception
     else:
-        print("[✓]", end="")
+        logging.info("[✓]", end="")
 
 
 def create_batch(service):
@@ -73,18 +98,19 @@ def batch_add(service, file_id, new_owner):
     global BATCH_SIZE
     BATCH_SIZE += 1
     if BATCH_SIZE == MAXIMUM_BATCH_SIZE:
-        print("\n\nMaximum batch size reached. Executing batch...", end=" ")
+        logging.info("Maximum batch size reached. Executing batch...")
         BATCH.execute()
-        print("\nBatch execution finished.")
+        logging.info("Batch execution finished.")
         create_batch(service)
 
 
 def process_all_files(service, new_owner, folder_id, folder_name=None):
     if not folder_name:
         folder_name = service.files().get(fileId=folder_id).execute().get("name")
-    print(f"\nGathering files in folder '{folder_name}'...", end="")
+    logging.info(f"Gathering files in folder '{folder_name}'...")
 
     next_page_token = None
+    # TODO: Refactor
     while True:
         try:
             items = service.files().list(
@@ -94,7 +120,8 @@ def process_all_files(service, new_owner, folder_id, folder_name=None):
             ).execute()
             for item in items["files"]:
                 if item["mimeType"] == "application/vnd.google-apps.folder":
-                    process_all_files(service, new_owner, item["id"], item["name"])
+                    # process_all_files(service, new_owner, item["id"], item["name"])
+                    pass
                 if item["owners"][0]["me"]:
                     batch_add(service, item["id"], new_owner)
             next_page_token = items.get("nextPageToken")
@@ -102,8 +129,9 @@ def process_all_files(service, new_owner, folder_id, folder_name=None):
                 break
 
         except HttpError as e:
-            print(f"\nAn error occurred: {e}")
-            break
+            exception_name = e.__class__.__name__
+            logging.warning({"name": exception_name, "message": str(e)})
+            raise
 
 def main():
     msg = """
@@ -114,6 +142,7 @@ def main():
     - OAUTH_PORT: Port number for the local authentication server (default: 65535)
                   Specify 0 as port number to get the authentication server in a random port.
     """
+    logging.getLogger().setLevel(logging.INFO)
     OAUTH_HOST = os.environ.get("OAUTH_HOST","localhost")
     OAUTH_PORT = os.environ.get("OAUTH_PORT",65535)
     parser = argparse.ArgumentParser(description=msg)
@@ -126,15 +155,18 @@ def main():
     parser.add_argument("-P", "--port", default=OAUTH_PORT, required=False,
         help="Port number for the local authentication server. This can also be specified from the OAUTH_PORT environment variable (default 65535)")
     args = parser.parse_args()
-    print(f"Changing all files to owner '{args.owner}'")
+    logging.info(f"Changing all files to owner '{args.owner}'")
     service = get_drive_service()
-    process_all_files(service, args.owner, args.folder)
-    if BATCH:
-        print("\n\nExecuting final batch...", end=" ")
-        BATCH.execute()
-        print("\nBatch execution finished.")
+    try:
+        process_all_files(service, args.owner, args.folder)
+        if BATCH:
+            logging.info("Executing final batch...")
+            BATCH.execute()
+            logging.info("Batch execution finished.")
+    except HttpError as e:
+        exception_name = e.__class__.__name__
+        logging.warning({"name": exception_name, "message": str(e)})
 
 
 if __name__ == "__main__":
     main()
-
