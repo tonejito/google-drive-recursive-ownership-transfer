@@ -114,15 +114,19 @@ def main():
     - OAUTH_PORT: Port number for the local authentication server (default: 65535)
                   Specify 0 as port number to get the authentication server in a random port.
     """
+    OAUTH_HOST = os.environ.get("OAUTH_HOST","localhost")
+    OAUTH_PORT = os.environ.get("OAUTH_PORT",65535)
     parser = argparse.ArgumentParser(description=msg)
-    parser.add_argument("-o", "--owner", help="E-mail address of the new owner.", required=True)
-    parser.add_argument("-f", "--folder",
-                        help="ID of the Google Drive folder. The user's root directory will be used if left empty.",
-                        default="root")
+    parser.add_argument("-o", "--owner", required=True,
+        help="E-mail address of the new owner.")
+    parser.add_argument("-f", "--folder", default="root",
+        help="ID of the Google Drive folder. The user's root directory will be used if left empty.")
+    parser.add_argument("-H", "--host", default=OAUTH_HOST, required=False,
+        help="Host name for the local authentication server. This can also be specified from the OAUTH_HOST environment variable (default 'localhost')")
+    parser.add_argument("-P", "--port", default=OAUTH_PORT, required=False,
+        help="Port number for the local authentication server. This can also be specified from the OAUTH_PORT environment variable (default 65535)")
     args = parser.parse_args()
     print(f"Changing all files to owner '{args.owner}'")
-    host = os.environ.get(OAUTH_HOST,"localhost")
-    host = os.environ.get(OAUTH_PORT,65535)
     service = get_drive_service()
     process_all_files(service, args.owner, args.folder)
     if BATCH:
