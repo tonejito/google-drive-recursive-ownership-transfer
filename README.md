@@ -42,7 +42,7 @@ TODO: Running on headless machine (ssh LocalForward?)
 CURRENT LIMITATION: Due to e-mail sending the script can only process ~2500 files before Google rejects the requests.
 
 ```commandline
-python transfer.py [-h] -o OWNER [-f FOLDER]
+./transfer.py [-h] -o OWNER [-f FOLDER]
 ```
 
 ```
@@ -57,7 +57,7 @@ options:
 ### Moving files/folders
 
 ```commandline
-python move.py [-h] -d DESTINATION [-f FOLDER]
+./move.py [-h] -d DESTINATION [-f FOLDER]
 ```
 
 ```
@@ -72,10 +72,8 @@ options:
 ### Listing owners with number of files owned by them
 
 ```commandline
-python count.py [-h] [-f FOLDER]
-```
+./count.py [-h] [-f FOLDER]
 
-```
 options:
   -h, --help            show this help message and exit
   -f FOLDER, --folder FOLDER
