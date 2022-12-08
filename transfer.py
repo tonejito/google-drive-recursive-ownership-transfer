@@ -11,25 +11,33 @@
 
 # Library documentation
 # https://developers.google.com/drive/api/guides/performance#overview
+# https://developers.google.com/drive/api/v3/reference/permissions/create
+# https://googleapis.github.io/google-api-python-client/docs/epy/index.html
+# https://github.com/googleapis/google-api-python-client/blob/main/docs/README.md
 # https://google-auth-oauthlib.readthedocs.io/en/latest/reference/google_auth_oauthlib.flow.html
 
 import argparse
 import logging
+import math
 import pickle
 import json
 import os
 
+from math import pow
+from time import sleep
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+SLEEP_TIME = 0
+SLEEP_FACTOR = 1
+SLEEP_EXPONENT = 2
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 BATCH = None
 BATCH_SIZE = 0
 MAXIMUM_BATCH_SIZE = 100
 PICKLE_FILE="client_secrets.pkl"
-
-# TODO: Set INFO log level
 
 # FIXME: Error handling / Rate limit
 #
@@ -40,6 +48,12 @@ PICKLE_FILE="client_secrets.pkl"
 # returned "Rate limit exceeded. User message: "Sorry, you have exceeded your sharing quota."".
 # Details: "[{'domain': 'global', 'reason': 'sharingRateLimitExceeded',
 #   'message': 'Rate limit exceeded. User message: "Sorry, you have exceeded your sharing quota."'}]">
+#
+# <HttpError 403 when requesting https://www.googleapis.com/drive/v3/files/FILE_ID/permissions?sendNotificationEmail=false&transferOwnership=true&alt=json
+# returned "The sendNotificationEmail parameter is only applicable for permissions of type 'user' or 'group', and must not be disabled for ownership transfers.".
+# Details: "[{'domain': 'global', 'reason': 'forbidden',
+#   'message': "The sendNotificationEmail parameter is only applicable for permissions of type 'user' or 'group', and must not be disabled for ownership transfers.",
+#   'locationType': 'parameter', 'location': 'sendNotificationEmail'}]">
 
 
 # TODO: Give option to avoid running a local web browser to get the OAUTH
@@ -67,11 +81,20 @@ def get_drive_service(host="localhost", port=65535):
 
 
 def callback(request_id, response, exception):
+    global SLEEP_TIME
+    global SLEEP_FACTOR
+    global SLEEP_EXPONENT
+
     if exception:
         exception_name = exception.__class__.__name__
         logging.warning({"name": exception_name, "message": str(exception)})
-        # raise Exception("Something happened") from exception
-        raise RuntimeError("Something happened") from exception
+        # TODO: Select if the exponential backoff is enabled or
+        # if the script should exit after receiving an HttpError
+        SLEEP_FACTOR = SLEEP_FACTOR + 1
+        SLEEP_TIME = pow(SLEEP_FACTOR,SLEEP_EXPONENT)
+        logging.debug(f"Exponential backoff: sleep({SLEEP_TIME}) : {SLEEP_FACTOR}")
+        sleep(SLEEP_TIME)
+        # raise RuntimeError("Something happened") from exception
     else:
         logging.info("[✓]", end="")
 
@@ -91,14 +114,16 @@ def batch_add(service, file_id, new_owner):
         body={
             "type": "user",
             "role": "owner",
-            "emailAddress": new_owner
+            "emailAddress": new_owner,
         },
         transferOwnership=True,
+        # Can't be disabled when transferring ownership
+        sendNotificationEmail=True,
     ))
     global BATCH_SIZE
     BATCH_SIZE += 1
     if BATCH_SIZE == MAXIMUM_BATCH_SIZE:
-        logging.info("Maximum batch size reached. Executing batch...")
+        logging.info("Maximum batch size reached. Executing batch…")
         BATCH.execute()
         logging.info("Batch execution finished.")
         create_batch(service)
@@ -107,10 +132,10 @@ def batch_add(service, file_id, new_owner):
 def process_all_files(service, new_owner, folder_id, folder_name=None):
     if not folder_name:
         folder_name = service.files().get(fileId=folder_id).execute().get("name")
-    logging.info(f"Gathering files in folder '{folder_name}'...")
+    logging.info(f"Gathering files in folder '{folder_name}'…")
 
     next_page_token = None
-    # TODO: Refactor
+    # TODO: Refactor to fetch all files, save them to a key-value store, then execute in batch
     while True:
         try:
             items = service.files().list(
@@ -120,8 +145,8 @@ def process_all_files(service, new_owner, folder_id, folder_name=None):
             ).execute()
             for item in items["files"]:
                 if item["mimeType"] == "application/vnd.google-apps.folder":
-                    # process_all_files(service, new_owner, item["id"], item["name"])
-                    pass
+                    process_all_files(service, new_owner, item["id"], item["name"])
+                    # pass
                 if item["owners"][0]["me"]:
                     batch_add(service, item["id"], new_owner)
             next_page_token = items.get("nextPageToken")
@@ -160,7 +185,7 @@ def main():
     try:
         process_all_files(service, args.owner, args.folder)
         if BATCH:
-            logging.info("Executing final batch...")
+            logging.info("Executing final batch…")
             BATCH.execute()
             logging.info("Batch execution finished.")
     except HttpError as e:
